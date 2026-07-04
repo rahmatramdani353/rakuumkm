@@ -135,7 +135,9 @@
         <aside id="sidebar" class="bg-white w-full md:w-64 h-auto md:h-screen border-r border-gray-200 flex flex-col transition-transform duration-300 z-40 fixed md:relative -translate-x-full md:translate-x-0">
             <div class="p-4 border-b border-gray-200 flex justify-between items-center">
                 <div class="flex items-center gap-2 text-primary font-bold text-xl">
-                    <i class="ph-fill ph-wallet"></i> RAKU
+                    <!-- Logo Baru -->
+                    <img src="https://cdn.phototourl.com/free/2026-07-04-093db5ff-6cd0-48f5-a192-0a51da26f7f2.png" class="w-8 h-8 object-contain" alt="RAKU Logo">
+                    RAKU
                 </div>
                 <button onclick="toggleSidebar()" class="md:hidden text-gray-500 text-2xl">
                     <i class="ph ph-x"></i>
@@ -195,22 +197,32 @@
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                         <div class="bg-white p-5 rounded-xl shadow-sm border border-gray-100">
                             <p class="text-sm text-gray-500 mb-1">Total Pemasukan</p>
-                            <h3 class="text-2xl font-bold text-gray-800" id="stat-income">Rp 0</h3>
-                        </div>
-                        <div class="bg-white p-5 rounded-xl shadow-sm border border-gray-100">
-                            <p class="text-sm text-gray-500 mb-1">Total Pengeluaran</p>
-                            <h3 class="text-2xl font-bold text-gray-800" id="stat-expense">Rp 0</h3>
-                        </div>
-                        <div class="bg-white p-5 rounded-xl shadow-sm border border-gray-100">
-                            <p class="text-sm text-gray-500 mb-1">Laba Bersih</p>
-                            <h3 class="text-2xl font-bold text-primary" id="stat-profit">Rp 0</h3>
-                        </div>
-                    </div>
+                    <!-- Dashboard: Proporsi -->
                     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
                         <div class="bg-white p-5 rounded-xl shadow-sm border border-gray-100">
-                            <h4 class="font-semibold text-gray-800 mb-4">Arus Kas</h4>
-                            <div class="w-full relative" style="height: 220px;">
-                                <canvas id="cashflowChart"></canvas>
+                            <h4 class="font-semibold text-gray-800 mb-4">Proporsi Pemasukan</h4>
+                            <div class="flex justify-center"><canvas id="incomeChart" height="250" style="max-height: 250px;"></canvas></div>
+                        </div>
+                        <div class="bg-white p-5 rounded-xl shadow-sm border border-gray-100">
+                            <h4 class="font-semibold text-gray-800 mb-4">Proporsi Pengeluaran</h4>
+                            <div class="flex justify-center"><canvas id="expenseChart" height="250" style="max-height: 250px;"></canvas></div>
+                        </div>
+                    </div>
+                    
+                    <!-- Arus Kas Chart -->
+                    <div class="bg-white p-5 rounded-xl shadow-sm border border-gray-100 mb-6">
+                        <h4 class="font-semibold text-gray-800 mb-4">Arus Kas</h4>
+                        <div class="w-full relative" style="height: 220px;">
+                            <canvas id="cashflowChart"></canvas>
+                        </div>
+                    </div>
+                    
+                    <!-- Proporsi Charts -->
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                        <div class="bg-white p-5 rounded-xl shadow-sm border border-gray-100">
+                            <h4 class="font-semibold text-gray-800 mb-4">Proporsi Pemasukan</h4>
+                            <div class="flex justify-center w-full relative" style="height: 220px;">
+                                <canvas id="incomeChart"></canvas>
                             </div>
                         </div>
                         <div class="bg-white p-5 rounded-xl shadow-sm border border-gray-100">
@@ -366,7 +378,7 @@
         }
 
         // CONFIG: Masukkan URL Web App Google Apps Script
-        const GAS_API_URL = "https://script.google.com/macros/s/AKfycbyAWdSMG3AeyQ8on-dYTk6yXgOLnRQg_WI6PSK4Dz_sFTey9vTUb5_cayMUwyhLaUh7Qw/exec"; 
+        const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzLWk7MkppwpL5paP39pFnAajCUeknwoE7YyOysbKBvw-9apDWv47L--xK0CV39v5Ijdg/exec"; 
 
         let appState = { user: null, transactions: [], isMockData: GAS_API_URL === "" };
 
@@ -769,35 +781,47 @@
         }
 
         // --- CHARTS ---
-        let cashflowChartObj, expenseChartObj;
+        let cashflowChartObj, expenseChartObj, incomeChartObj;
         function initCharts() {
             if (document.getElementById('view-dashboard').classList.contains('hidden') || !appState.transactions.length) return;
             
-            const incomes = [0,0,0,0,0,0,0]; const expenses = [0,0,0,0,0,0,0];
             const expenseCategories = {};
+            const incomeCategories = {};
             
             appState.transactions.forEach(t => {
                 if(t.type === 'pengeluaran') {
                     expenseCategories[t.category] = (expenseCategories[t.category] || 0) + Number(t.amount);
-                }
+        // --- CHARTS (DASHBOARD) ---
+        let cashflowChartObj, incomeChartObj, expenseChartObj;
+        function initCharts() {
+            if (document.getElementById('view-dashboard').classList.contains('hidden') || !appState.transactions.length) return;
+            
+            const incomeCategories = {};
+            const expenseCategories = {};
+            
+            appState.transactions.forEach(t => {
+                if(t.type === 'pemasukan') incomeCategories[t.category] = (incomeCategories[t.category] || 0) + Number(t.amount);
+                if(t.type === 'pengeluaran') expenseCategories[t.category] = (expenseCategories[t.category] || 0) + Number(t.amount);
             });
 
-            if(cashflowChartObj) cashflowChartObj.destroy();
-            cashflowChartObj = new Chart(document.getElementById('cashflowChart').getContext('2d'), {
-                type: 'bar',
-                data: { labels: ['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min'], datasets: [
-                    { label: 'Pemasukan', data: [100, 200, 150, 300, 250, 400, 500], backgroundColor: '#16A34A' }, // Mock Data for visual
-                    { label: 'Pengeluaran', data: [50, 80, 70, 120, 90, 150, 200], backgroundColor: '#ef4444' }
-                ]},
-                options: { responsive: true, maintainAspectRatio: false }
+            // Grafik Proporsi Pemasukan
+            if(incomeChartObj) incomeChartObj.destroy();
+            incomeChartObj = new Chart(document.getElementById('incomeChart').getContext('2d'), {
+                type: 'doughnut',
+                data: {
+                    labels: Object.keys(incomeCategories).length ? Object.keys(incomeCategories) : ['Belum Ada'],
+                    datasets: [{ data: Object.values(incomeCategories).length ? Object.values(incomeCategories) : [1], backgroundColor: ['#16A34A', '#22c55e', '#86efac'] }]
+                },
+                options: { responsive: true, maintainAspectRatio: false, cutout: '70%' }
             });
 
+            // Grafik Proporsi Pengeluaran
             if(expenseChartObj) expenseChartObj.destroy();
             expenseChartObj = new Chart(document.getElementById('expenseChart').getContext('2d'), {
                 type: 'doughnut',
                 data: {
                     labels: Object.keys(expenseCategories).length ? Object.keys(expenseCategories) : ['Belum Ada'],
-                    datasets: [{ data: Object.values(expenseCategories).length ? Object.values(expenseCategories) : [1], backgroundColor: ['#3b82f6', '#16A34A', '#f59e0b', '#94a3b8', '#ef4444'] }]
+                    datasets: [{ data: Object.values(expenseCategories).length ? Object.values(expenseCategories) : [1], backgroundColor: ['#ef4444', '#f87171', '#fca5a5'] }]
                 },
                 options: { responsive: true, maintainAspectRatio: false, cutout: '70%' }
             });
