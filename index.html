@@ -392,7 +392,7 @@
         }
 
         // CONFIG: Masukkan URL Web App Google Apps Script
-        const GAS_API_URL = "https://script.google.com/macros/s/AKfycbyWDCBSkmAgZ-46zNkWrarEAkOGBOSfpiiUfDOJeVfXB-MMpxwOq2BxdqyAu82dID-RZg/exec"; 
+        const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxa-rKnLKgWbnWpuApE0DQj7oROyG85Si_7E9C9wd_Gz6IVuVeK5DeD2HKsXws-BCjq/exec"; 
 
         let appState = { user: null, transactions: [], isMockData: GAS_API_URL === "" };
 
@@ -413,29 +413,46 @@
                 Swal.fire('Info', 'URL API belum diisi. Menggunakan mode Demo.', 'info');
                 return null;
             }
+            
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 detik batas waktu
+
             try {
                 const response = await fetch(GAS_API_URL, {
                     method: 'POST',
                     headers: { 'Content-Type': 'text/plain' },
-                    body: JSON.stringify({ action: action, data: payload })
+                    body: JSON.stringify({ action: action, data: payload }),
+                    signal: controller.signal
                 });
                 
+                clearTimeout(timeoutId);
                 const textResponse = await response.text();
+                
                 try {
                     const json = JSON.parse(textResponse);
-                    // Jika script tidak menemukan perintah, berarti Apps Script belum "New Version"
+                    // Jika script tidak menemukan perintah
                     if (json.status === 'error' && json.message === 'Action not found') {
-                        Swal.fire('Error Database', 'Script belum di-deploy sebagai "New version". Ikuti panduan deployment.', 'error');
+                        Swal.fire('Error Database', 'Script belum di-deploy sebagai "New version".', 'error');
                         return null;
                     }
                     return json;
                 } catch(e) {
-                    // Jika respon berupa HTML/Bukan JSON, ini 100% masalah Akses Google (CORS)
-                    Swal.fire('Akses Ditolak', 'Pengaturan Apps Script salah! "Who has access" WAJIB diset ke "Anyone" (Siapa saja).', 'error');
+                    // Jika balasan berupa HTML Login Google, itu artinya izin "Anyone" salah
+                    if (textResponse.toLowerCase().includes("sign in") || textResponse.toLowerCase().includes("login")) {
+                        Swal.fire('Akses Ditolak', 'Pengaturan Apps Script salah! "Who has access" WAJIB diset ke "Anyone".', 'error');
+                    } else {
+                        // Jika bukan halaman login, artinya balasan Google terpotong karena sinyal buruk
+                        Swal.fire('Sinyal Kurang Stabil', 'Server gagal merespons data dengan utuh. Harap coba lagi saat sinyal lebih baik.', 'warning');
+                    }
                     return null;
                 }
             } catch (err) {
-                Swal.fire('Koneksi Putus', 'Gagal terhubung ke server. Periksa jaringan Anda.', 'error');
+                clearTimeout(timeoutId);
+                if (err.name === 'AbortError') {
+                    Swal.fire('Waktu Habis (Timeout)', 'Koneksi internet Anda terlalu lambat. Proses dibatalkan otomatis.', 'warning');
+                } else {
+                    Swal.fire('Koneksi Putus', 'Gagal terhubung ke server. Periksa jaringan internet/kuota Anda.', 'error');
+                }
                 return null;
             }
         }
