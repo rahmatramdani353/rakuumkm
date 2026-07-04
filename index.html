@@ -371,14 +371,12 @@
         // Registrasi Service Worker untuk PWA (Aplikasi HP)
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('./sw.js')
-                    .then(reg => console.log('PWA Service Worker terdaftar'))
-                    .catch(err => console.log('PWA gagal terdaftar:', err));
+                navigator.serviceWorker.register('./sw.js').catch(err => console.log('PWA error:', err));
             });
         }
 
         // CONFIG: Masukkan URL Web App Google Apps Script
-        const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzLWk7MkppwpL5paP39pFnAajCUeknwoE7YyOysbKBvw-9apDWv47L--xK0CV39v5Ijdg/exec"; 
+        const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzZ0uyy_R-Pk2Jk1fBoB6Hu7VmmVcmWspOsibnVSRT8-I3ltcI5A-NgK99XWqy_9OKSmg/exec"; 
 
         let appState = { user: null, transactions: [], isMockData: GAS_API_URL === "" };
 
@@ -390,6 +388,41 @@
             const savedUser = localStorage.getItem('raku_user');
             if (savedUser) { appState.user = JSON.parse(savedUser); showApp(); }
         });
+
+        // ==========================================
+        // FUNGSI UTAMA PENGIRIMAN DATA KE SERVER
+        // ==========================================
+        async function fetchAPI(action, payload = {}) {
+            if (!GAS_API_URL || GAS_API_URL === "") {
+                Swal.fire('Info', 'URL API belum diisi. Menggunakan mode Demo.', 'info');
+                return null;
+            }
+            try {
+                const response = await fetch(GAS_API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain' },
+                    body: JSON.stringify({ action: action, data: payload })
+                });
+                
+                const textResponse = await response.text();
+                try {
+                    const json = JSON.parse(textResponse);
+                    // Jika script tidak menemukan perintah, berarti Apps Script belum "New Version"
+                    if (json.status === 'error' && json.message === 'Action not found') {
+                        Swal.fire('Error Database', 'Script belum di-deploy sebagai "New version". Ikuti panduan deployment.', 'error');
+                        return null;
+                    }
+                    return json;
+                } catch(e) {
+                    // Jika respon berupa HTML/Bukan JSON, ini 100% masalah Akses Google (CORS)
+                    Swal.fire('Akses Ditolak', 'Pengaturan Apps Script salah! "Who has access" WAJIB diset ke "Anyone" (Siapa saja).', 'error');
+                    return null;
+                }
+            } catch (err) {
+                Swal.fire('Koneksi Putus', 'Gagal terhubung ke server. Periksa jaringan Anda.', 'error');
+                return null;
+            }
+        }
 
         // --- AUTH ---
         function toggleAuth(type) {
@@ -414,21 +447,15 @@
 
             const btn = e.target.querySelector('button[type="submit"]');
             const originalText = btn.innerHTML;
-            btn.innerHTML = 'Memproses...';
+            btn.innerHTML = 'Memproses...'; btn.disabled = true;
             
-            try {
-                // Menggunakan metode POST agar aman
-                const payload = {
-                    email: document.getElementById('login-email').value,
-                    password: document.getElementById('login-password').value
-                };
+            const payload = {
+                email: document.getElementById('login-email').value,
+                password: document.getElementById('login-password').value
+            };
 
-                const res = await fetch(GAS_API_URL, { 
-                    method: 'POST', 
-                    body: JSON.stringify({ action: 'login', data: payload }) 
-                });
-                
-                const data = await res.json();
+            const data = await fetchAPI('login', payload);
+            if(data) {
                 if(data.status === 'success') {
                     appState.user = data.data;
                     localStorage.setItem('raku_user', JSON.stringify(data.data));
@@ -436,11 +463,8 @@
                 } else {
                     Swal.fire('Gagal', data.message, 'error');
                 }
-            } catch(err) { 
-                Swal.fire('Error', 'Koneksi bermasalah', 'error'); 
-                console.error(err);
             }
-            btn.innerHTML = originalText;
+            btn.innerHTML = originalText; btn.disabled = false;
         }
 
         async function handleRegister(e) {
@@ -450,6 +474,10 @@
                 toggleAuth('login'); return;
             }
             
+            const btn = e.target.querySelector('button[type="submit"]');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = 'Memproses...'; btn.disabled = true;
+
             const payload = {
                 nama: document.getElementById('reg-nama').value,
                 usaha: document.getElementById('reg-usaha').value,
@@ -457,18 +485,16 @@
                 password: document.getElementById('reg-password').value
             };
 
-            const btn = e.target.querySelector('button[type="submit"]');
-            btn.innerHTML = 'Memproses...';
-
-            try {
-                const res = await fetch(GAS_API_URL, { method: 'POST', body: JSON.stringify({ action: 'register', data: payload }) });
-                const data = await res.json();
+            const data = await fetchAPI('register', payload);
+            if(data) {
                 if(data.status === 'success') {
                     Swal.fire('Sukses', 'Registrasi Berhasil. Silakan Login.', 'success');
                     toggleAuth('login');
-                } else Swal.fire('Gagal', data.message, 'error');
-            } catch(err) { Swal.fire('Error', 'Koneksi bermasalah', 'error'); }
-            btn.innerHTML = 'Daftar';
+                } else {
+                    Swal.fire('Gagal', data.message, 'error');
+                }
+            }
+            btn.innerHTML = originalText; btn.disabled = false;
         }
 
         function handleLogout() {
@@ -554,14 +580,12 @@
                 updateDashboardStats();
                 return;
             }
-            try {
-                const res = await fetch(`${GAS_API_URL}?action=getTransactions&userid=${appState.user.id}`);
-                const result = await res.json();
-                if(result.status === 'success') {
-                    appState.transactions = result.data;
-                    updateDashboardStats();
-                }
-            } catch (err) { console.error(err); }
+            
+            const result = await fetchAPI('getTransactions', { userid: appState.user.id });
+            if (result && result.status === 'success') {
+                appState.transactions = result.data;
+                updateDashboardStats();
+            }
         }
 
         async function handleSaveTransaction(e) {
@@ -571,7 +595,6 @@
             btn.innerHTML = 'Menyimpan...'; btn.disabled = true;
 
             const editId = document.getElementById('form-id').value;
-
             const newData = {
                 id: editId ? editId : Date.now(), 
                 userId: appState.user.id,
@@ -588,9 +611,8 @@
                 if(editId) {
                     const idx = appState.transactions.findIndex(t => String(t.id) === String(editId));
                     if(idx > -1) appState.transactions[idx] = newData;
-                } else {
-                    appState.transactions.push(newData);
-                }
+                } else appState.transactions.push(newData);
+                
                 updateDashboardStats();
                 closeModal('modal-form');
                 Swal.fire({ icon: 'success', title: 'Tersimpan', timer: 1000, showConfirmButton: false });
@@ -598,26 +620,17 @@
                 return;
             }
 
-            try {
-                const response = await fetch(GAS_API_URL, {
-                    method: 'POST',
-                    body: JSON.stringify({ action: actionName, data: newData })
-                });
-                const res = await response.json();
-                if(res.status === 'success') {
-                    if(editId) {
-                        const idx = appState.transactions.findIndex(t => String(t.id) === String(editId));
-                        if(idx > -1) appState.transactions[idx] = newData;
-                    } else {
-                        appState.transactions.push(newData);
-                    }
-                    updateDashboardStats();
-                    closeModal('modal-form');
-                    Swal.fire('Sukses', 'Data berhasil disimpan', 'success');
-                } else {
-                    Swal.fire('Gagal', res.message, 'error');
-                }
-            } catch(err) { Swal.fire('Error', 'Gagal menyimpan', 'error'); }
+            const data = await fetchAPI(actionName, newData);
+            if (data && data.status === 'success') {
+                if(editId) {
+                    const idx = appState.transactions.findIndex(t => String(t.id) === String(editId));
+                    if(idx > -1) appState.transactions[idx] = newData;
+                } else appState.transactions.push(newData);
+                
+                updateDashboardStats();
+                closeModal('modal-form');
+                Swal.fire('Sukses', 'Data berhasil disimpan', 'success');
+            }
             btn.innerHTML = originalText; btn.disabled = false;
         }
 
@@ -639,21 +652,11 @@
                         return;
                     }
 
-                    try {
-                        const res = await fetch(GAS_API_URL, {
-                            method: 'POST',
-                            body: JSON.stringify({ action: 'deleteTransaction', data: { id: id, type: type } })
-                        });
-                        const data = await res.json();
-                        if (data.status === 'success') {
-                            appState.transactions = appState.transactions.filter(t => String(t.id) !== String(id));
-                            updateDashboardStats();
-                            Swal.fire('Terhapus!', 'Data berhasil dihapus.', 'success');
-                        } else {
-                            Swal.fire('Gagal', data.message, 'error');
-                        }
-                    } catch (err) {
-                        Swal.fire('Error', 'Koneksi bermasalah', 'error');
+                    const data = await fetchAPI('deleteTransaction', { id: id, type: type });
+                    if (data && data.status === 'success') {
+                        appState.transactions = appState.transactions.filter(t => String(t.id) !== String(id));
+                        updateDashboardStats();
+                        Swal.fire('Terhapus!', 'Data berhasil dihapus.', 'success');
                     }
                 }
             });
@@ -666,14 +669,10 @@
             openModal(type);
             document.getElementById('modal-title').innerText = "Edit " + (type === 'pemasukan' ? "Pemasukan" : "Pengeluaran");
             
-            // Masukkan data lama ke form
             setTimeout(() => {
                 document.getElementById('form-id').value = dataToEdit.id;
-                
-                // Format tanggal untuk input type="date" (YYYY-MM-DD)
                 const d = new Date(dataToEdit.date);
                 const isoDate = new Date(d.getTime() - (d.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
-                
                 document.getElementById('form-tanggal').value = isoDate;
                 document.getElementById('form-ket').value = dataToEdit.desc;
                 document.getElementById('form-kat').value = dataToEdit.category;
@@ -718,13 +717,9 @@
                     <td class="px-4 py-3 text-right font-semibold ${item.type === 'pemasukan' ? 'text-green-600' : 'text-red-500'}">
                         ${item.type === 'pemasukan' ? '+' : '-'}${formatRp(item.amount)}
                     </td>
-                    <td class="px-4 py-3 text-center">
-                        <button onclick="editTransaction('${item.id}', '${item.type}')" class="text-blue-500 hover:text-blue-700 mr-2 transition p-1 bg-blue-50 rounded" title="Edit">
-                            <i class="ph ph-pencil-simple"></i>
-                        </button>
-                        <button onclick="deleteTransaction('${item.id}', '${item.type}')" class="text-red-500 hover:text-red-700 transition p-1 bg-red-50 rounded" title="Hapus">
-                            <i class="ph ph-trash"></i>
-                        </button>
+                    <td class="px-4 py-3 text-center opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button onclick="editTransaction('${item.id}', '${item.type}')" class="text-blue-500 hover:text-blue-700 mr-2 p-1 bg-blue-50 rounded"><i class="ph ph-pencil-simple"></i></button>
+                        <button onclick="deleteTransaction('${item.id}', '${item.type}')" class="text-red-500 hover:text-red-700 p-1 bg-red-50 rounded"><i class="ph ph-trash"></i></button>
                     </td>
                 </tr>
             `).join('');
@@ -733,8 +728,6 @@
         // --- EXPORT FITUR ---
         function exportToExcel() {
             if(appState.transactions.length === 0) return Swal.fire('Info', 'Tidak ada data untuk diexport', 'info');
-            
-            // Format data untuk excel agar lebih rapi
             const excelData = appState.transactions.map(t => ({
                 'Tanggal': formatDate(t.date),
                 'Tipe': t.type.toUpperCase(),
@@ -742,55 +735,29 @@
                 'Keterangan': t.desc,
                 'Nominal (Rp)': Number(t.amount)
             }));
-
             const ws = XLSX.utils.json_to_sheet(excelData);
             const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, "Laporan Keuangan");
+            XLSX.utils.book_append_sheet(wb, ws, "Laporan");
             XLSX.writeFile(wb, "Laporan_RAKU_UMKM.xlsx");
         }
 
         function exportToPDF() {
             if(appState.transactions.length === 0) return Swal.fire('Info', 'Tidak ada data untuk diexport', 'info');
-            
             const { jsPDF } = window.jspdf;
             const doc = new jsPDF();
             
-            doc.setFontSize(18);
-            doc.text("Laporan Transaksi RAKU UMKM", 14, 22);
-            doc.setFontSize(11);
-            doc.setTextColor(100);
+            doc.setFontSize(18); doc.text("Laporan Transaksi RAKU UMKM", 14, 22);
+            doc.setFontSize(11); doc.setTextColor(100);
             doc.text(`Dicetak oleh: ${appState.user.business} | Tanggal: ${formatDate(new Date())}`, 14, 30);
             
-            const tableData = appState.transactions.map(t => [
-                formatDate(t.date), 
-                t.type === 'pemasukan' ? 'Pemasukan' : 'Pengeluaran', 
-                t.category, 
-                t.desc, 
-                formatRp(t.amount)
-            ]);
-
+            const tableData = appState.transactions.map(t => [ formatDate(t.date), t.type === 'pemasukan' ? 'Pemasukan' : 'Pengeluaran', t.category, t.desc, formatRp(t.amount) ]);
             doc.autoTable({
                 head: [['Tanggal', 'Tipe', 'Kategori', 'Keterangan', 'Nominal']],
-                body: tableData,
-                startY: 40,
-                theme: 'grid',
-                headStyles: { fillColor: [22, 163, 74] } // Warna hijau primary
+                body: tableData, startY: 40, theme: 'grid', headStyles: { fillColor: [22, 163, 74] }
             });
-            
             doc.save("Laporan_RAKU_UMKM.pdf");
         }
 
-        // --- CHARTS ---
-        let cashflowChartObj, expenseChartObj, incomeChartObj;
-        function initCharts() {
-            if (document.getElementById('view-dashboard').classList.contains('hidden') || !appState.transactions.length) return;
-            
-            const expenseCategories = {};
-            const incomeCategories = {};
-            
-            appState.transactions.forEach(t => {
-                if(t.type === 'pengeluaran') {
-                    expenseCategories[t.category] = (expenseCategories[t.category] || 0) + Number(t.amount);
         // --- CHARTS (DASHBOARD) ---
         let cashflowChartObj, incomeChartObj, expenseChartObj;
         function initCharts() {
@@ -804,7 +771,17 @@
                 if(t.type === 'pengeluaran') expenseCategories[t.category] = (expenseCategories[t.category] || 0) + Number(t.amount);
             });
 
-            // Grafik Proporsi Pemasukan
+            // Grafik Arus Kas (Hanya ilustrasi mockup jika pakai data real butuh agregasi tanggal)
+            if(cashflowChartObj) cashflowChartObj.destroy();
+            cashflowChartObj = new Chart(document.getElementById('cashflowChart').getContext('2d'), {
+                type: 'bar',
+                data: { labels: ['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min'], datasets: [
+                    { label: 'Pemasukan', data: [100, 200, 150, 300, 250, 400, 500], backgroundColor: '#16A34A' },
+                    { label: 'Pengeluaran', data: [50, 80, 70, 120, 90, 150, 200], backgroundColor: '#ef4444' }
+                ]},
+                options: { responsive: true, maintainAspectRatio: false }
+            });
+
             if(incomeChartObj) incomeChartObj.destroy();
             incomeChartObj = new Chart(document.getElementById('incomeChart').getContext('2d'), {
                 type: 'doughnut',
@@ -815,7 +792,6 @@
                 options: { responsive: true, maintainAspectRatio: false, cutout: '70%' }
             });
 
-            // Grafik Proporsi Pengeluaran
             if(expenseChartObj) expenseChartObj.destroy();
             expenseChartObj = new Chart(document.getElementById('expenseChart').getContext('2d'), {
                 type: 'doughnut',
