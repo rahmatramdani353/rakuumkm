@@ -209,11 +209,15 @@
                     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
                         <div class="bg-white p-5 rounded-xl shadow-sm border border-gray-100">
                             <h4 class="font-semibold text-gray-800 mb-4">Arus Kas</h4>
-                            <canvas id="cashflowChart" height="250"></canvas>
+                            <div class="w-full relative" style="height: 220px;">
+                                <canvas id="cashflowChart"></canvas>
+                            </div>
                         </div>
                         <div class="bg-white p-5 rounded-xl shadow-sm border border-gray-100">
                             <h4 class="font-semibold text-gray-800 mb-4">Proporsi Pengeluaran</h4>
-                            <div class="flex justify-center"><canvas id="expenseChart" height="250" style="max-height: 250px;"></canvas></div>
+                            <div class="flex justify-center w-full relative" style="height: 220px;">
+                                <canvas id="expenseChart"></canvas>
+                            </div>
                         </div>
                     </div>
                 </section>
@@ -235,6 +239,7 @@
                                         <th class="px-4 py-3">Keterangan</th>
                                         <th class="px-4 py-3">Kategori</th>
                                         <th class="px-4 py-3 text-right">Nominal</th>
+                                        <th class="px-4 py-3 text-center">Aksi</th>
                                     </tr>
                                 </thead>
                                 <tbody id="table-pemasukan"></tbody>
@@ -260,6 +265,7 @@
                                         <th class="px-4 py-3">Keterangan</th>
                                         <th class="px-4 py-3">Kategori</th>
                                         <th class="px-4 py-3 text-right">Nominal</th>
+                                        <th class="px-4 py-3 text-center">Aksi</th>
                                     </tr>
                                 </thead>
                                 <tbody id="table-pengeluaran"></tbody>
@@ -316,6 +322,8 @@
             </div>
             <form id="transaction-form" onsubmit="handleSaveTransaction(event)" class="p-5 space-y-4">
                 <input type="hidden" id="form-tipe">
+                <input type="hidden" id="form-id">
+                
                 <div>
                     <label class="block text-sm text-gray-600 mb-1">Tanggal</label>
                     <input type="date" id="form-tanggal" required class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:border-primary">
@@ -521,6 +529,7 @@
         function closeModal(id) { 
             document.getElementById(id).classList.add('hidden'); 
             document.getElementById('transaction-form').reset(); 
+            document.getElementById('form-id').value = ""; 
         }
 
         // --- DATA FETCHING & SAVE ---
@@ -549,8 +558,10 @@
             const originalText = btn.innerHTML;
             btn.innerHTML = 'Menyimpan...'; btn.disabled = true;
 
+            const editId = document.getElementById('form-id').value;
+
             const newData = {
-                id: Date.now(),
+                id: editId ? editId : Date.now(), 
                 userId: appState.user.id,
                 type: document.getElementById('form-tipe').value,
                 date: document.getElementById('form-tanggal').value,
@@ -559,8 +570,15 @@
                 amount: document.getElementById('form-nominal').value
             };
 
+            const actionName = editId ? 'updateTransaction' : 'addTransaction';
+
             if(appState.isMockData) {
-                appState.transactions.push(newData);
+                if(editId) {
+                    const idx = appState.transactions.findIndex(t => String(t.id) === String(editId));
+                    if(idx > -1) appState.transactions[idx] = newData;
+                } else {
+                    appState.transactions.push(newData);
+                }
                 updateDashboardStats();
                 closeModal('modal-form');
                 Swal.fire({ icon: 'success', title: 'Tersimpan', timer: 1000, showConfirmButton: false });
@@ -571,17 +589,84 @@
             try {
                 const response = await fetch(GAS_API_URL, {
                     method: 'POST',
-                    body: JSON.stringify({ action: 'addTransaction', data: newData })
+                    body: JSON.stringify({ action: actionName, data: newData })
                 });
                 const res = await response.json();
                 if(res.status === 'success') {
-                    appState.transactions.push(newData);
+                    if(editId) {
+                        const idx = appState.transactions.findIndex(t => String(t.id) === String(editId));
+                        if(idx > -1) appState.transactions[idx] = newData;
+                    } else {
+                        appState.transactions.push(newData);
+                    }
                     updateDashboardStats();
                     closeModal('modal-form');
-                    Swal.fire('Sukses', 'Data disimpan', 'success');
+                    Swal.fire('Sukses', 'Data berhasil disimpan', 'success');
+                } else {
+                    Swal.fire('Gagal', res.message, 'error');
                 }
             } catch(err) { Swal.fire('Error', 'Gagal menyimpan', 'error'); }
             btn.innerHTML = originalText; btn.disabled = false;
+        }
+
+        function deleteTransaction(id, type) {
+            Swal.fire({
+                title: 'Hapus transaksi ini?',
+                text: "Data yang dihapus tidak bisa dikembalikan!",
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#ef4444',
+                cancelButtonColor: '#9ca3af',
+                confirmButtonText: 'Ya, Hapus'
+            }).then(async (result) => {
+                if (result.isConfirmed) {
+                    if (appState.isMockData) {
+                        appState.transactions = appState.transactions.filter(t => String(t.id) !== String(id));
+                        updateDashboardStats();
+                        Swal.fire('Terhapus!', 'Data berhasil dihapus.', 'success');
+                        return;
+                    }
+
+                    try {
+                        const res = await fetch(GAS_API_URL, {
+                            method: 'POST',
+                            body: JSON.stringify({ action: 'deleteTransaction', data: { id: id, type: type } })
+                        });
+                        const data = await res.json();
+                        if (data.status === 'success') {
+                            appState.transactions = appState.transactions.filter(t => String(t.id) !== String(id));
+                            updateDashboardStats();
+                            Swal.fire('Terhapus!', 'Data berhasil dihapus.', 'success');
+                        } else {
+                            Swal.fire('Gagal', data.message, 'error');
+                        }
+                    } catch (err) {
+                        Swal.fire('Error', 'Koneksi bermasalah', 'error');
+                    }
+                }
+            });
+        }
+
+        function editTransaction(id, type) {
+            const dataToEdit = appState.transactions.find(t => String(t.id) === String(id));
+            if (!dataToEdit) return;
+
+            openModal(type);
+            document.getElementById('modal-title').innerText = "Edit " + (type === 'pemasukan' ? "Pemasukan" : "Pengeluaran");
+            
+            // Masukkan data lama ke form
+            setTimeout(() => {
+                document.getElementById('form-id').value = dataToEdit.id;
+                
+                // Format tanggal untuk input type="date" (YYYY-MM-DD)
+                const d = new Date(dataToEdit.date);
+                const isoDate = new Date(d.getTime() - (d.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
+                
+                document.getElementById('form-tanggal').value = isoDate;
+                document.getElementById('form-ket').value = dataToEdit.desc;
+                document.getElementById('form-kat').value = dataToEdit.category;
+                document.getElementById('form-nominal').value = dataToEdit.amount;
+            }, 50);
         }
 
         function updateDashboardStats() {
@@ -610,7 +695,7 @@
             const data = appState.transactions.filter(t => t.type === type).sort((a,b) => new Date(b.date) - new Date(a.date));
             
             if(data.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="4" class="px-4 py-8 text-center text-gray-500">Belum ada data ${type}.</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="5" class="px-4 py-8 text-center text-gray-500">Belum ada data ${type}.</td></tr>`;
                 return;
             }
             tbody.innerHTML = data.map(item => `
@@ -620,6 +705,14 @@
                     <td class="px-4 py-3"><span class="bg-gray-100 text-gray-600 px-2 py-1 rounded text-xs">${item.category}</span></td>
                     <td class="px-4 py-3 text-right font-semibold ${item.type === 'pemasukan' ? 'text-green-600' : 'text-red-500'}">
                         ${item.type === 'pemasukan' ? '+' : '-'}${formatRp(item.amount)}
+                    </td>
+                    <td class="px-4 py-3 text-center">
+                        <button onclick="editTransaction('${item.id}', '${item.type}')" class="text-blue-500 hover:text-blue-700 mr-2 transition p-1 bg-blue-50 rounded" title="Edit">
+                            <i class="ph ph-pencil-simple"></i>
+                        </button>
+                        <button onclick="deleteTransaction('${item.id}', '${item.type}')" class="text-red-500 hover:text-red-700 transition p-1 bg-red-50 rounded" title="Hapus">
+                            <i class="ph ph-trash"></i>
+                        </button>
                     </td>
                 </tr>
             `).join('');
