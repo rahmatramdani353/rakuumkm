@@ -358,7 +358,7 @@
         }
 
         // CONFIG: Masukkan URL Web App Google Apps Script
-        const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzUAUs59NlyFF9K9ap7n7pC3Pz0UB9udozXbSLjkHz2gYHSonwulep30WbzMkPM-Q-FCw/exec"; 
+        const GAS_API_URL = "https://script.google.com/macros/s/AKfycbyzpX5wV9fhYlTcuQ9IlXaHmJ612s5_0eUYIondMcOklELkxFDGu3yFjn6yJHyi43xKYg/exec"; 
 
         let appState = { user: null, transactions: [], isMockData: GAS_API_URL === "" };
 
@@ -396,7 +396,11 @@
             btn.innerHTML = 'Memproses...';
             
             try {
-                const res = await fetch(`${GAS_API_URL}?action=login&email=${document.getElementById('login-email').value}&password=${document.getElementById('login-password').value}`);
+                // PERBAIKAN: Encode komponen URI agar karakter spesial (seperti & atau #) pada password tidak merusak URL
+                const emailVal = encodeURIComponent(document.getElementById('login-email').value.trim());
+                const passVal = encodeURIComponent(document.getElementById('login-password').value);
+                
+                const res = await fetch(`${GAS_API_URL}?action=login&email=${emailVal}&password=${passVal}`);
                 const data = await res.json();
                 if(data.status === 'success') {
                     appState.user = data.data;
