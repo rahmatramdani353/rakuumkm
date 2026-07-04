@@ -358,7 +358,7 @@
         }
 
         // CONFIG: Masukkan URL Web App Google Apps Script
-        const GAS_API_URL = "https://script.google.com/macros/s/AKfycbyzpX5wV9fhYlTcuQ9IlXaHmJ612s5_0eUYIondMcOklELkxFDGu3yFjn6yJHyi43xKYg/exec"; 
+        const GAS_API_URL = "https://script.google.com/macros/s/AKfycbyViuaBM_eeedt180jv-jxSpvwk1iu9O3B3PDnUIVO-v7qpKDyyLP1h5g3fmA_1WIsKyQ/exec"; 
 
         let appState = { user: null, transactions: [], isMockData: GAS_API_URL === "" };
 
@@ -393,14 +393,21 @@
             }
 
             const btn = e.target.querySelector('button[type="submit"]');
+            const originalText = btn.innerHTML;
             btn.innerHTML = 'Memproses...';
             
             try {
-                // PERBAIKAN: Encode komponen URI agar karakter spesial (seperti & atau #) pada password tidak merusak URL
-                const emailVal = encodeURIComponent(document.getElementById('login-email').value.trim());
-                const passVal = encodeURIComponent(document.getElementById('login-password').value);
+                // Menggunakan metode POST agar aman
+                const payload = {
+                    email: document.getElementById('login-email').value,
+                    password: document.getElementById('login-password').value
+                };
+
+                const res = await fetch(GAS_API_URL, { 
+                    method: 'POST', 
+                    body: JSON.stringify({ action: 'login', data: payload }) 
+                });
                 
-                const res = await fetch(`${GAS_API_URL}?action=login&email=${emailVal}&password=${passVal}`);
                 const data = await res.json();
                 if(data.status === 'success') {
                     appState.user = data.data;
@@ -409,8 +416,11 @@
                 } else {
                     Swal.fire('Gagal', data.message, 'error');
                 }
-            } catch(err) { Swal.fire('Error', 'Koneksi bermasalah', 'error'); }
-            btn.innerHTML = 'Masuk';
+            } catch(err) { 
+                Swal.fire('Error', 'Koneksi bermasalah', 'error'); 
+                console.error(err);
+            }
+            btn.innerHTML = originalText;
         }
 
         async function handleRegister(e) {
